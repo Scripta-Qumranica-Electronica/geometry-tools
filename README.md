@@ -11,3 +11,6 @@
 
   <h2>Tests</h2>
   <p>Unit tests are written into the individual `.rs` files themselves. They are useful for debugging, since this is a library (and thus has no main function in the binary).</p>
+
+  <h3>Dependencies</h3>
+  <p>Among the many fine dependencies used in this library, the major packages are <a href="https://github.com/georust/geo">geo</a>, <a href="https://github.com/georust/wkt">wkt</a>, and <a href="https://github.com/21re/rust-geo-booleanop">rust-geo-booleanop</a>.</p>
