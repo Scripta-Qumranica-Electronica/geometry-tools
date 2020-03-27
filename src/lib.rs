@@ -6,12 +6,15 @@
 //!
 mod geometry_boolean;
 mod geometry_wkt_writer;
+mod json_errors;
 mod utils;
 use wasm_bindgen::prelude::*;
 
 use geometry_boolean::{
     wkt_multi_polygon_polygon_union, wkt_multi_polygon_union, wkt_polygon_union,
 };
+use std::fmt::{Display, Formatter};
+use std::fmt;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
 // allocator.
@@ -36,12 +39,11 @@ pub fn greet() {
 ///
 #[wasm_bindgen(js_name = wktUnion)]
 pub fn wkt_union(geom1: String, geom2: String) -> Result<String, JsValue> {
-    let union_err = "The submitted geometries cannot be unioned.";
     // Grab the stated type of each input
     let geom1_type = get_geometry_type(&geom1)?;
     let geom2_type = get_geometry_type(&geom2)?;
 
-    if geom1_type.eq_ignore_ascii_case("MultiPolygon")  {
+    if geom1_type.eq_ignore_ascii_case("MultiPolygon") {
         return if geom1_type == geom2_type {
             //union two multipolygons
             Ok(wkt_multi_polygon_union(geom1, geom2))
@@ -49,8 +51,8 @@ pub fn wkt_union(geom1: String, geom2: String) -> Result<String, JsValue> {
             // union multi + polygon
             Ok(wkt_multi_polygon_polygon_union(geom1, geom2))
         } else {
-            Err(JsValue::from_str(union_err))
-        }
+            Err(json_errors::boolean_geometry_errors::invalid_boolean_geom_pair(&geom1, &geom2))
+        };
     } else if geom1_type.eq_ignore_ascii_case("Polygon") {
         return if geom1_type == geom2_type {
             // union two polygons
@@ -59,11 +61,13 @@ pub fn wkt_union(geom1: String, geom2: String) -> Result<String, JsValue> {
             // union multi + polygon
             Ok(wkt_multi_polygon_polygon_union(geom2, geom1))
         } else {
-            Err(JsValue::from_str(union_err))
-        }
+            Err(json_errors::boolean_geometry_errors::invalid_boolean_geom_pair(&geom1, &geom2))
+        };
     }
 
-    Err(JsValue::from_str("Could not process the submitted geometries."))
+    Err(JsValue::from_str(
+        "Could not process the submitted geometries.",
+    ))
 }
 
 /// This function reads a submitted string and makes a very quick decision
@@ -73,7 +77,6 @@ pub fn wkt_union(geom1: String, geom2: String) -> Result<String, JsValue> {
 /// be down downstream.
 ///
 fn get_geometry_type(geom: &String) -> Result<String, JsValue> {
-    let geom_parse_error = "One or both of the submitted geometries is invalid/unsupported.";
     match geom.get(..1) {
         Some("G") => Ok(String::from("GeometryCollection")),
         Some("L") => Ok(String::from("LineString")),
@@ -84,7 +87,9 @@ fn get_geometry_type(geom: &String) -> Result<String, JsValue> {
                 Ok(String::from("MultiPoint"))
             } else if geom.starts_with("MultiP") {
                 Ok(String::from("MultiPolygon"))
-            } else { Err(JsValue::from_str("Input error.")) }
+            } else {
+                Err(json_errors::wkt_errors::wkt_cannot_be_parsed(geom))
+            }
         }
         Some("P") => {
             if geom.starts_with("Poi") {
@@ -94,21 +99,16 @@ fn get_geometry_type(geom: &String) -> Result<String, JsValue> {
             }
         }
         // Return immediately on empty string
-        Some(&_) => Err(JsValue::from_str(geom_parse_error)),
-        None => Err(JsValue::from_str(geom_parse_error)),
+        Some(&_) => Err(json_errors::wkt_errors::wkt_cannot_be_parsed(geom)),
+        None => Err(json_errors::wkt_errors::wkt_cannot_be_parsed(geom)),
     }
 }
+
+/** Tests */
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn can_greet() {
-        let msg = shout_out();
-        let expected = String::from("Hey I returned a string!");
-        assert_eq!(expected, msg);
-    }
 
     #[test]
     fn can_join_polygons() {
