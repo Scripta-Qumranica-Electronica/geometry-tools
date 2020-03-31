@@ -14,4 +14,7 @@ pub mod boolean_geometry_errors {
     pub fn invalid_boolean_geom_pair(g1: &String, g2: &String) -> JsValue {
         JsValue::from_str(format!("Cannot perform a boolean operation on geometries {} and {}", g1, g2).as_ref())
     }
+    pub fn invalid_geom(reason: &String) -> JsValue {
+        JsValue::from_str(format!("The geometry is bad, {}.", reason).as_ref())
+    }
 }

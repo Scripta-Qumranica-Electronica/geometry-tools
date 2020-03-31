@@ -6,6 +6,9 @@
 //!
 mod geometry_boolean;
 mod geometry_wkt_writer;
+mod geometry_svg_writer;
+mod geometry_svg_reader;
+mod polygon_validator;
 mod json_errors;
 mod utils;
 use wasm_bindgen::prelude::*;
@@ -13,8 +16,6 @@ use wasm_bindgen::prelude::*;
 use geometry_boolean::{
     wkt_multi_polygon_polygon_union, wkt_multi_polygon_union, wkt_polygon_union,
 };
-use std::fmt::{Display, Formatter};
-use std::fmt;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
 // allocator.
@@ -46,20 +47,23 @@ pub fn wkt_union(geom1: String, geom2: String) -> Result<String, JsValue> {
     if geom1_type.eq_ignore_ascii_case("MultiPolygon") {
         return if geom1_type == geom2_type {
             //union two multipolygons
-            Ok(wkt_multi_polygon_union(geom1, geom2))
+            Ok(wkt_multi_polygon_union(&geom1, &geom2))
         } else if geom2_type.eq_ignore_ascii_case("Polygon") {
             // union multi + polygon
-            Ok(wkt_multi_polygon_polygon_union(geom1, geom2))
+            Ok(wkt_multi_polygon_polygon_union(&geom1, &geom2))
         } else {
             Err(json_errors::boolean_geometry_errors::invalid_boolean_geom_pair(&geom1, &geom2))
         };
     } else if geom1_type.eq_ignore_ascii_case("Polygon") {
         return if geom1_type == geom2_type {
             // union two polygons
-            Ok(wkt_polygon_union(geom1, geom2))
+            let result = wkt_polygon_union(&geom1, &geom2);
+            if result.is_ok() { Ok(result.unwrap()) }
+            else { Err(result.err().unwrap()) }
+
         } else if geom2_type.eq_ignore_ascii_case("MulitPolygon") {
             // union multi + polygon
-            Ok(wkt_multi_polygon_polygon_union(geom2, geom1))
+            Ok(wkt_multi_polygon_polygon_union(&geom2, &geom1))
         } else {
             Err(json_errors::boolean_geometry_errors::invalid_boolean_geom_pair(&geom1, &geom2))
         };
