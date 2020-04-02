@@ -1,13 +1,55 @@
 use crate::geometry_normalize::Normalized;
 use geo_types::{Coordinate, Geometry, Line, LineString, Polygon, Rect};
 use std::convert::From;
+use std::fmt;
 use svgtypes::{PathParser, PathSegment, PointsParser};
-use wasm_bindgen::JsValue;
-
 use xml::reader::{EventReader, XmlEvent};
 
-// TODO: all errors should be real error here, not JsValue
-pub fn to_geometry(svg: &str) -> Result<Geometry<f64>, JsValue> {
+pub enum SvgError {
+    ParseError(std::num::ParseFloatError),
+    SvgInvalidType(SvgUnsupportedGeometryTypeError),
+    InvalidSvgError(InvalidSvgError),
+}
+
+impl From<std::num::ParseFloatError> for SvgError {
+    fn from(error: std::num::ParseFloatError) -> Self {
+        SvgError::ParseError(error)
+    }
+}
+
+struct SvgUnsupportedGeometryTypeError;
+
+// Implement std::fmt::Display for AppError
+impl fmt::Display for SvgUnsupportedGeometryTypeError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "The SVG could not be parsed to a valid Geometry type") // user-facing output
+    }
+}
+
+// Implement std::fmt::Debug for AppError
+impl fmt::Debug for SvgUnsupportedGeometryTypeError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{{ file: {}, line: {} }}", file!(), line!()) // programmer-facing output
+    }
+}
+
+struct InvalidSvgError;
+
+// Implement std::fmt::Display for AppError
+impl fmt::Display for InvalidSvgError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "The SVG input is invalid") // user-facing output
+    }
+}
+
+// Implement std::fmt::Debug for AppError
+impl fmt::Debug for InvalidSvgError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{{ file: {}, line: {} }}", file!(), line!()) // programmer-facing output
+    }
+}
+
+pub fn to_geometry(svg: &str) -> Result<Geometry<f64>, SvgError> {
     let parser = EventReader::new(svg.as_bytes());
     for e in parser {
         if let Ok(XmlEvent::StartElement {
@@ -18,8 +60,8 @@ pub fn to_geometry(svg: &str) -> Result<Geometry<f64>, JsValue> {
             if name.local_name == "path" {
                 for attr in attributes {
                     if attr.name.local_name == "d" {
-                        let res = svg_d_path_to_geometry(&attr.value);
-                        return Ok(res.unwrap().into());
+                        let res = svg_d_path_to_geometry(&attr.value)?;
+                        return Ok(res.into());
                     }
                 }
             }
@@ -27,8 +69,8 @@ pub fn to_geometry(svg: &str) -> Result<Geometry<f64>, JsValue> {
             else if name.local_name == "polygon" {
                 for attr in attributes {
                     if attr.name.local_name == "points" {
-                        let res = svg_polygon_to_geometry(&attr.value);
-                        return Ok(res.unwrap().into());
+                        let res = svg_polygon_to_geometry(&attr.value)?;
+                        return Ok(res.into());
                     }
                 }
             }
@@ -36,8 +78,8 @@ pub fn to_geometry(svg: &str) -> Result<Geometry<f64>, JsValue> {
             else if name.local_name == "polyline" {
                 for attr in attributes {
                     if attr.name.local_name == "points" {
-                        let res = svg_polyline_to_geometry(&attr.value);
-                        return Ok(res.unwrap().into());
+                        let res = svg_polyline_to_geometry(&attr.value)?;
+                        return Ok(res.into());
                     }
                 }
             }
@@ -50,57 +92,36 @@ pub fn to_geometry(svg: &str) -> Result<Geometry<f64>, JsValue> {
 
                 for attr in attributes {
                     if attr.name.local_name == "x" {
-                        let x_val = attr.value.parse::<f64>();
-                        if x_val.is_err() {
-                            return Err(JsValue::from_str("no valid x value found in SVG rect"));
-                        }
-                        x = Some(x_val.unwrap());
+                        let x_val = attr.value.parse::<f64>()?;
+                        x = Some(x_val);
                     } else if attr.name.local_name == "y" {
-                        let y_val = attr.value.parse::<f64>();
-                        if y_val.is_err() {
-                            return Err(JsValue::from_str("no valid y value found in SVG rect"));
-                        }
-                        y = Some(y_val.unwrap());
+                        let y_val = attr.value.parse::<f64>()?;
+                        y = Some(y_val);
                     } else if attr.name.local_name == "width" {
-                        let width_val = attr.value.parse::<f64>();
-                        if width_val.is_err() {
-                            return Err(JsValue::from_str(
-                                "no valid width value found in SVG rect",
-                            ));
-                        }
-                        width = Some(width_val.unwrap());
+                        let width_val = attr.value.parse::<f64>()?;
+                        width = Some(width_val);
                     } else if attr.name.local_name == "height" {
-                        let height_val = attr.value.parse::<f64>();
-                        if height_val.is_err() {
-                            return Err(JsValue::from_str(
-                                "no valid height value found in SVG rect",
-                            ));
-                        }
-                        height = Some(height_val.unwrap());
+                        let height_val = attr.value.parse::<f64>()?;
+                        height = Some(height_val);
                     }
                 }
 
                 if x.is_none() {
-                    return Err(JsValue::from_str("no x value found in SVG rect"));
+                    return Err(SvgError::InvalidSvgError(InvalidSvgError));
                 }
                 if y.is_none() {
-                    return Err(JsValue::from_str("no y value found in SVG rect"));
+                    return Err(SvgError::InvalidSvgError(InvalidSvgError));
                 }
                 if width.is_none() {
-                    return Err(JsValue::from_str("no width value found in SVG rect"));
+                    return Err(SvgError::InvalidSvgError(InvalidSvgError));
                 }
                 if height.is_none() {
-                    return Err(JsValue::from_str("no height value found in SVG rect"));
+                    return Err(SvgError::InvalidSvgError(InvalidSvgError));
                 }
+                let rect =
+                    svg_rect_to_geometry(x.unwrap(), y.unwrap(), width.unwrap(), height.unwrap())?;
 
-                return Ok(svg_rect_to_geometry(
-                    x.unwrap(),
-                    y.unwrap(),
-                    width.unwrap(),
-                    height.unwrap(),
-                )
-                .unwrap()
-                .into());
+                return Ok(rect.into());
             }
             // An SVG line
             else if name.local_name == "line" {
@@ -111,43 +132,31 @@ pub fn to_geometry(svg: &str) -> Result<Geometry<f64>, JsValue> {
 
                 for attr in attributes {
                     if attr.name.local_name == "x1" {
-                        let start_x_val = attr.value.parse::<f64>();
-                        if start_x_val.is_err() {
-                            return Err(JsValue::from_str("no valid x1 value found in SVG rect"));
-                        }
-                        start_x = Some(start_x_val.unwrap());
+                        let start_x_val = attr.value.parse::<f64>()?;
+                        start_x = Some(start_x_val);
                     } else if attr.name.local_name == "y1" {
-                        let start_y_val = attr.value.parse::<f64>();
-                        if start_y_val.is_err() {
-                            return Err(JsValue::from_str("no valid y1 value found in SVG rect"));
-                        }
-                        start_y = Some(start_y_val.unwrap());
+                        let start_y_val = attr.value.parse::<f64>()?;
+                        start_y = Some(start_y_val);
                     } else if attr.name.local_name == "x2" {
-                        let end_x_val = attr.value.parse::<f64>();
-                        if end_x_val.is_err() {
-                            return Err(JsValue::from_str("no valid x2 value found in SVG rect"));
-                        }
-                        end_x = Some(end_x_val.unwrap());
+                        let end_x_val = attr.value.parse::<f64>()?;
+                        end_x = Some(end_x_val);
                     } else if attr.name.local_name == "y2" {
-                        let end_y_val = attr.value.parse::<f64>();
-                        if end_y_val.is_err() {
-                            return Err(JsValue::from_str("no valid y2 value found in SVG rect"));
-                        }
-                        end_y = Some(end_y_val.unwrap());
+                        let end_y_val = attr.value.parse::<f64>()?;
+                        end_y = Some(end_y_val);
                     }
                 }
 
                 if start_x.is_none() {
-                    return Err(JsValue::from_str("no x1 value found in SVG rect"));
+                    return Err(SvgError::InvalidSvgError(InvalidSvgError));
                 }
                 if start_y.is_none() {
-                    return Err(JsValue::from_str("no y1 value found in SVG rect"));
+                    return Err(SvgError::InvalidSvgError(InvalidSvgError));
                 }
                 if end_x.is_none() {
-                    return Err(JsValue::from_str("no x2 value found in SVG rect"));
+                    return Err(SvgError::InvalidSvgError(InvalidSvgError));
                 }
                 if end_y.is_none() {
-                    return Err(JsValue::from_str("no y2 value found in SVG rect"));
+                    return Err(SvgError::InvalidSvgError(InvalidSvgError));
                 }
 
                 return Ok(svg_line_to_geometry(
@@ -161,10 +170,10 @@ pub fn to_geometry(svg: &str) -> Result<Geometry<f64>, JsValue> {
         }
     }
 
-    Err(JsValue::from_str("no svg shape found"))
+    Err(SvgError::SvgInvalidType(SvgUnsupportedGeometryTypeError))
 }
 
-fn svg_polygon_to_geometry(point_string: &str) -> Result<Polygon<f64>, JsValue> {
+fn svg_polygon_to_geometry(point_string: &str) -> Result<Polygon<f64>, SvgError> {
     let points = PointsParser::from(point_string);
     let polygon = Polygon::new(
         LineString(
@@ -176,12 +185,12 @@ fn svg_polygon_to_geometry(point_string: &str) -> Result<Polygon<f64>, JsValue> 
     );
 
     if polygon.exterior().num_coords() == 0 {
-        return Err(JsValue::from_str("no points found in linestring"));
+        return Err(SvgError::InvalidSvgError(InvalidSvgError));
     }
     Ok(polygon.normalized())
 }
 
-fn svg_polyline_to_geometry(point_string: &str) -> Result<LineString<f64>, JsValue> {
+fn svg_polyline_to_geometry(point_string: &str) -> Result<LineString<f64>, SvgError> {
     let points = PointsParser::from(point_string);
     let linestring = LineString(
         points
@@ -190,19 +199,19 @@ fn svg_polyline_to_geometry(point_string: &str) -> Result<LineString<f64>, JsVal
     );
 
     if linestring.num_coords() == 0 {
-        return Err(JsValue::from_str("no points found in linestring"));
+        return Err(SvgError::InvalidSvgError(InvalidSvgError));
     }
     Ok(linestring)
 }
 
-fn svg_rect_to_geometry(x: f64, y: f64, width: f64, height: f64) -> Result<Polygon<f64>, JsValue> {
+fn svg_rect_to_geometry(x: f64, y: f64, width: f64, height: f64) -> Result<Polygon<f64>, SvgError> {
     let max_x = x + width;
     let max_y = y + height;
     if x > max_x {
-        return Err(JsValue::from_str("x + width is less than x"));
+        return Err(SvgError::InvalidSvgError(InvalidSvgError));
     }
     if y > max_y {
-        return Err(JsValue::from_str("y + height is less than y"));
+        return Err(SvgError::InvalidSvgError(InvalidSvgError));
     }
 
     // geo_types::Rect is not part of the enum Geometry, so we cast it to Polygon upon return
@@ -226,7 +235,7 @@ fn svg_line_to_geometry(start_x: &f64, start_y: &f64, end_x: &f64, end_y: &f64) 
     )
 }
 
-fn svg_d_path_to_geometry(svg: &str) -> Result<Polygon<f64>, JsValue> {
+fn svg_d_path_to_geometry(svg: &str) -> Result<Polygon<f64>, SvgError> {
     // Store the Vec<Coordinate> for each ring, the first one will be the outer ring
     // TODO: find out if it is possible for any other ring in the SVG to be the outer, or only the first one
     let mut rings = vec![] as Vec<Vec<Coordinate<f64>>>;
@@ -313,7 +322,7 @@ fn svg_d_path_to_geometry(svg: &str) -> Result<Polygon<f64>, JsValue> {
         }
     }
     if rings.is_empty() {
-        return Err(JsValue::from_str("no coordinates found in the path"));
+        return Err(SvgError::InvalidSvgError(InvalidSvgError));
     }
 
     let mut rings_iter = rings.iter();
@@ -349,7 +358,7 @@ mod tests {
         let svg_string = String::from("M0 0l0 60L60 60L60 0L0 0M10 10L40 1L40 40L10.5 40L10 10");
         let parsed_svg = svg_d_path_to_geometry(&svg_string);
         assert_eq!(parsed_svg.is_ok(), true);
-        assert_eq!(parsed_svg.unwrap(), poly);
+        assert_eq!(parsed_svg.ok().unwrap(), poly);
     }
 
     #[test]
@@ -374,7 +383,7 @@ mod tests {
             String::from(r#"<path d="M0 0L0 60L60 60L60 0L0 0M10 10L40 1L40 40L10.5 40L10 10"/>"#);
         let parsed_svg = to_geometry(&svg_string);
         assert_eq!(parsed_svg.is_ok(), true);
-        assert_eq!(parsed_svg.unwrap(), poly);
+        assert_eq!(parsed_svg.ok().unwrap(), poly);
     }
 
     #[test]
@@ -392,7 +401,7 @@ mod tests {
         let svg_string = String::from(r#"<polygon points="0, 0 60, 0 60, 60 0, 60 0, 0"/>"#);
         let parsed_svg = to_geometry(&svg_string);
         assert_eq!(parsed_svg.is_ok(), true);
-        assert_eq!(parsed_svg.unwrap(), poly);
+        assert_eq!(parsed_svg.ok().unwrap(), poly);
     }
 
     #[test]
@@ -406,7 +415,7 @@ mod tests {
         let svg_string = String::from(r#"<polyline points="0, 0 0, 60 60, 60 60, 0"/>"#);
         let parsed_svg = to_geometry(&svg_string);
         assert_eq!(parsed_svg.is_ok(), true);
-        assert_eq!(parsed_svg.unwrap(), line);
+        assert_eq!(parsed_svg.ok().unwrap(), line);
     }
 
     #[test]
@@ -424,6 +433,6 @@ mod tests {
         let svg_string = String::from(r#"<rect x="0" y="0" width="60" height="60"/>"#);
         let parsed_svg = to_geometry(&svg_string);
         assert_eq!(parsed_svg.is_ok(), true);
-        assert_eq!(parsed_svg.unwrap(), poly);
+        assert_eq!(parsed_svg.ok().unwrap(), poly);
     }
 }
