@@ -5,11 +5,12 @@
 //! along with the standard geometric boolean operations.
 //!
 mod geometry_boolean;
-mod geometry_wkt_writer;
-mod geometry_svg_writer;
+mod geometry_normalize;
 mod geometry_svg_reader;
-mod polygon_validator;
+mod geometry_svg_writer;
+mod geometry_wkt_writer;
 mod json_errors;
+mod polygon_validator;
 mod utils;
 use wasm_bindgen::prelude::*;
 
@@ -57,10 +58,8 @@ pub fn wkt_union(geom1: String, geom2: String) -> Result<String, JsValue> {
     } else if geom1_type.eq_ignore_ascii_case("Polygon") {
         return if geom1_type == geom2_type {
             // union two polygons
-            let result = wkt_polygon_union(&geom1, &geom2);
-            if result.is_ok() { Ok(result.unwrap()) }
-            else { Err(result.err().unwrap()) }
-
+            let result = wkt_polygon_union(&geom1, &geom2)?;
+            Ok(result)
         } else if geom2_type.eq_ignore_ascii_case("MulitPolygon") {
             // union multi + polygon
             Ok(wkt_multi_polygon_polygon_union(&geom2, &geom1))
@@ -80,7 +79,7 @@ pub fn wkt_union(geom1: String, geom2: String) -> Result<String, JsValue> {
 /// contain, nor does it do any processing or validation. All validation should
 /// be down downstream.
 ///
-fn get_geometry_type(geom: &String) -> Result<String, JsValue> {
+fn get_geometry_type(geom: &str) -> Result<String, JsValue> {
     match geom.get(..1) {
         Some("G") => Ok(String::from("GeometryCollection")),
         Some("L") => Ok(String::from("LineString")),

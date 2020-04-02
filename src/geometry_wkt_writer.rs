@@ -37,32 +37,16 @@ where
     T: num_traits::Float + fmt::Display,
 {
     fn to_wkt(&self) -> String {
-        let multi_polygon = self.clone().into_multi_polygon();
-        if multi_polygon.is_some() {
-            return multi_polygon.unwrap().to_wkt();
+        match self {
+            Geometry::MultiPolygon { .. } => self.clone().into_multi_polygon().unwrap().to_wkt(),
+            Geometry::Polygon { .. } => self.clone().into_polygon().unwrap().to_wkt(),
+            Geometry::MultiLineString { .. } => {
+                self.clone().into_multi_line_string().unwrap().to_wkt()
+            }
+            Geometry::LineString { .. } => self.clone().into_line_string().unwrap().to_wkt(),
+            Geometry::Point { .. } => self.clone().into_point().unwrap().to_wkt(),
+            _ => "GEOMETRYCOLLECTION EMPTY".into(),
         }
-        let polygon = self.clone().into_polygon();
-        if polygon.is_some() {
-            return polygon.unwrap().to_wkt();
-        }
-        let multi_line_string = self.clone().into_multi_line_string();
-        if multi_line_string.is_some() {
-            return multi_line_string.unwrap().to_wkt();
-        }
-        let line_string = self.clone().into_line_string();
-        if line_string.is_some() {
-            return line_string.unwrap().to_wkt();
-        }
-        let multi_point = self.clone().into_multi_point();
-        if multi_point.is_some() {
-            return multi_point.unwrap().to_wkt();
-        }
-        let point = self.clone().into_point();
-        if point.is_some() {
-            return point.unwrap().to_wkt();
-        }
-
-        "GEOMETRYCOLLECTION EMPTY".into()
     }
 }
 
@@ -120,7 +104,7 @@ where
     T: num_traits::Float + fmt::Display,
 {
     let mut lines: Vec<LineString<T>> = poly.interiors().into();
-    let exterior: &LineString<T> = poly.exterior().into();
+    let exterior: &LineString<T> = poly.exterior();
     lines.insert(0, exterior.clone());
 
     lines

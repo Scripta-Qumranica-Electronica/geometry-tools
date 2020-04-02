@@ -1,21 +1,17 @@
 extern crate geo;
 
-use geo_types::{
-    Coordinate, Geometry, GeometryCollection, Line, LineString, MultiLineString, MultiPoint,
-    MultiPolygon, Point, Polygon,
-};
-use std::fmt;
-use std::iter::Chain;
-use std::hash::{Hash, Hasher};
-use num_traits;
-use linked_hash_map::LinkedHashMap;
-use geo::algorithm::intersects::Intersects;
 use byteorder::{ByteOrder, NativeEndian};
+use geo::algorithm::intersects::Intersects;
+use geo_types::{Coordinate, Line, LineString, MultiPolygon, Point, Polygon};
+use linked_hash_map::LinkedHashMap;
+use num_traits;
+use std::hash::{Hash, Hasher};
 
 /// Violations of the OCG rules for polygon validity
 /// This also includes usage of NaN or Infinite floating point values
 pub struct ValidationErrors<T>
-where T: num_traits::Float
+where
+    T: num_traits::Float,
 {
     /// Whether the polygon is valid or not
     pub valid: bool,
@@ -37,16 +33,81 @@ where T: num_traits::Float
 }
 
 pub trait Validate<T>
-    where T: num_traits::Float
+where
+    T: num_traits::Float,
 {
     fn validate(&self) -> bool;
     fn validate_detailed(&self) -> ValidationErrors<T>;
 }
 
-/** Geometries */
+/** Polygons */
+
+impl<T> Validate<T> for MultiPolygon<T>
+where
+    T: num_traits::Float,
+{
+    fn validate(&self) -> bool {
+        validate_multi_polygon(self, true).valid
+    }
+
+    fn validate_detailed(&self) -> ValidationErrors<T> {
+        validate_multi_polygon(self, false)
+    }
+}
+
+fn validate_multi_polygon<T: num_traits::Float>(
+    mp: &MultiPolygon<T>,
+    quick: bool,
+) -> ValidationErrors<T> {
+    let mut validation_errors = ValidationErrors::<T> {
+        valid: true,
+        has_less_than_three_points: false,
+        unsupported_floating_point_values: vec![] as Vec<T>,
+        open_rings: vec![] as Vec<LineString<T>>,
+        ring_intersects_other_ring: vec![] as Vec<Coordinate<T>>,
+        self_intersections: vec![] as Vec<Coordinate<T>>,
+        point_touching_line: vec![] as Vec<Coordinate<T>>,
+        repeated_points: vec![] as Vec<Coordinate<T>>,
+    };
+    for poly in mp.0.iter() {
+        if quick {
+            let valid = poly.validate();
+            if !valid {
+                validation_errors.valid = false;
+                return validation_errors; // Early return on first error
+            }
+        } else {
+            let err = poly.validate_detailed();
+            if !err.valid && validation_errors.valid {
+                validation_errors.valid = err.valid
+            }
+            if err.has_less_than_three_points && !validation_errors.has_less_than_three_points {
+                validation_errors.has_less_than_three_points = err.has_less_than_three_points
+            }
+            validation_errors
+                .unsupported_floating_point_values
+                .extend(err.unsupported_floating_point_values);
+            validation_errors.open_rings.extend(err.open_rings);
+            validation_errors
+                .ring_intersects_other_ring
+                .extend(err.ring_intersects_other_ring);
+            validation_errors
+                .self_intersections
+                .extend(err.self_intersections);
+            validation_errors
+                .point_touching_line
+                .extend(err.point_touching_line);
+            validation_errors
+                .repeated_points
+                .extend(err.repeated_points);
+        }
+    }
+    validation_errors
+}
 
 impl<T> Validate<T> for Polygon<T>
-    where T: num_traits::Float
+where
+    T: num_traits::Float,
 {
     fn validate(&self) -> bool {
         validate_polygon(self, true).valid
@@ -63,7 +124,8 @@ impl<T> Validate<T> for Polygon<T>
 /// to true will cause the function to bail out at the very first error (without)
 /// providing any detailed information about the error.
 fn validate_polygon<T>(poly: &Polygon<T>, quick: bool) -> ValidationErrors<T>
-    where   T: num_traits::Float,
+where
+    T: num_traits::Float,
 {
     let mut validation_errors = ValidationErrors::<T> {
         valid: true,
@@ -83,9 +145,11 @@ fn validate_polygon<T>(poly: &Polygon<T>, quick: bool) -> ValidationErrors<T>
     for ring in rings.into_iter() {
         // Check for poly with less than 3 points
         let ring_points_count = ring.0.len();
-        if  ring_points_count < 3 {
+        if ring_points_count < 3 {
             validation_errors.valid = false;
-            if quick { return validation_errors; }
+            if quick {
+                return validation_errors;
+            }
             validation_errors.has_less_than_three_points = true;
         }
 
@@ -94,23 +158,34 @@ fn validate_polygon<T>(poly: &Polygon<T>, quick: bool) -> ValidationErrors<T>
         // any open rings. It is computationally cheap though, so keep it in case of future design
         // changes.
         if !ring.0[0].x.eq(&ring.0[ring_points_count - 1].x)
-            && !ring.0[0].y.eq(&ring.0[ring_points_count - 1].y) {
-                validation_errors.valid = false;
-                if quick { return validation_errors; }
-                validation_errors.open_rings.push(ring.clone());
+            && !ring.0[0].y.eq(&ring.0[ring_points_count - 1].y)
+        {
+            validation_errors.valid = false;
+            if quick {
+                return validation_errors;
+            }
+            validation_errors.open_rings.push(ring.clone());
         }
 
         // Check for unsupported floating point value
         let mut prev_point = ring.0[0];
         if !prev_point.x.is_finite() {
             validation_errors.valid = false;
-            if quick { return validation_errors; }
-            validation_errors.unsupported_floating_point_values.push(prev_point.x);
+            if quick {
+                return validation_errors;
+            }
+            validation_errors
+                .unsupported_floating_point_values
+                .push(prev_point.x);
         }
         if !prev_point.y.is_finite() {
             validation_errors.valid = false;
-            if quick { return validation_errors; }
-            validation_errors.unsupported_floating_point_values.push(prev_point.y);
+            if quick {
+                return validation_errors;
+            }
+            validation_errors
+                .unsupported_floating_point_values
+                .push(prev_point.y);
         }
 
         // let mut ring_points_map = LinkedHashMap::<[u8;16], Coordinate<T>>::new();
@@ -121,20 +196,35 @@ fn validate_polygon<T>(poly: &Polygon<T>, quick: bool) -> ValidationErrors<T>
             // Check for unsupported floating point value
             if !point.x.is_finite() {
                 validation_errors.valid = false;
-                if quick { return validation_errors; }
-                validation_errors.unsupported_floating_point_values.push(point.x);
+                if quick {
+                    return validation_errors;
+                }
+                validation_errors
+                    .unsupported_floating_point_values
+                    .push(point.x);
             }
             if !point.y.is_finite() {
                 validation_errors.valid = false;
-                if quick { return validation_errors; }
-                validation_errors.unsupported_floating_point_values.push(point.y);
+                if quick {
+                    return validation_errors;
+                }
+                validation_errors
+                    .unsupported_floating_point_values
+                    .push(point.y);
             }
 
             // Check for repeated points (don't check the last point, since that should == first point)
-            let pp_comp = CompCoord { 0: Coordinate { x: prev_point.x, y: prev_point.y } };
+            let pp_comp = CompCoord {
+                0: Coordinate {
+                    x: prev_point.x,
+                    y: prev_point.y,
+                },
+            };
             if ring_points_map.contains_key(&pp_comp) {
                 validation_errors.valid = false;
-                if quick { return validation_errors; }
+                if quick {
+                    return validation_errors;
+                }
                 validation_errors.repeated_points.push(prev_point);
             }
             // Check for intersections
@@ -143,11 +233,17 @@ fn validate_polygon<T>(poly: &Polygon<T>, quick: bool) -> ValidationErrors<T>
                 if !line.end.eq(&current_line.start) && !line.start.eq(&current_line.end) {
                     if line.intersects(&current_line) {
                         validation_errors.valid = false;
-                        if quick { return validation_errors; }
+                        if quick {
+                            return validation_errors;
+                        }
                         if line_idx > ring_start_idx {
-                            validation_errors.self_intersections.push(line.intersection_point(&current_line));
+                            validation_errors
+                                .self_intersections
+                                .push(line.intersection_point(&current_line));
                         } else {
-                            validation_errors.ring_intersects_other_ring.push(line.intersection_point(&current_line));
+                            validation_errors
+                                .ring_intersects_other_ring
+                                .push(line.intersection_point(&current_line));
                         }
                     }
 
@@ -155,8 +251,12 @@ fn validate_polygon<T>(poly: &Polygon<T>, quick: bool) -> ValidationErrors<T>
                     let start_point: Point<T> = current_line.start.into();
                     if line.intersects(&start_point) {
                         validation_errors.valid = false;
-                        if quick { return validation_errors; }
-                        validation_errors.point_touching_line.push(current_line.start);
+                        if quick {
+                            return validation_errors;
+                        }
+                        validation_errors
+                            .point_touching_line
+                            .push(current_line.start);
                     }
                 }
             }
@@ -178,8 +278,7 @@ impl<T: num_traits::Float> PartialEq for CompCoord<T> {
         // only the current state.  This is a strict byte-equality check and does not
         // try to account in any way for the deviation of a float from its expected
         // value due to imprecision caused by floating point operations.
-        transform_coord_to_array_of_u8(self) ==
-            transform_coord_to_array_of_u8(other)
+        transform_coord_to_array_of_u8(self) == transform_coord_to_array_of_u8(other)
     }
 }
 
@@ -192,41 +291,62 @@ impl<T: num_traits::Float> Hash for CompCoord<T> {
 }
 /// Transform a coordinate into a 128byte array by concatenating the
 /// byte representation of its position on the 2 axes (as f64)
-/// 
-fn transform_coord_to_array_of_u8<T>(coord: &CompCoord<T>) -> [u8;16]
-where T: num_traits::Float
+///
+fn transform_coord_to_array_of_u8<T>(coord: &CompCoord<T>) -> [u8; 16]
+where
+    T: num_traits::Float,
 {
     let mut buf1 = [0; 8];
     NativeEndian::write_f64(&mut buf1, T::to_f64(&coord.0.x).unwrap());
     let mut buf2 = [0; 8];
     NativeEndian::write_f64(&mut buf2, T::to_f64(&coord.0.y).unwrap());
-    
-    [ buf1[0], buf1[1], buf1[2], buf1[3], buf1[4], buf1[5], buf1[6], buf1[7], 
-        buf2[0], buf2[1], buf2[2], buf2[3], buf2[4], buf2[5], buf2[6], buf2[7] ]
+
+    [
+        buf1[0], buf1[1], buf1[2], buf1[3], buf1[4], buf1[5], buf1[6], buf1[7], buf2[0], buf2[1],
+        buf2[2], buf2[3], buf2[4], buf2[5], buf2[6], buf2[7],
+    ]
 }
 
 /// Transform a 128byte array into a geometry coordinate
-/// 
-fn transform_array_of_u8_to_coord(byte_arr: &[u8;16]) -> CompCoord<f64>
-{
-    let x = NativeEndian::read_f64(&[byte_arr[0], byte_arr[1], byte_arr[2], byte_arr[3], byte_arr[4], 
-        byte_arr[5], byte_arr[6], byte_arr[7]]);
-    let y = NativeEndian::read_f64(&[byte_arr[8], byte_arr[9], byte_arr[10], byte_arr[11], byte_arr[12], 
-        byte_arr[13], byte_arr[14], byte_arr[15]]);
+///
+fn transform_array_of_u8_to_coord(byte_arr: &[u8; 16]) -> CompCoord<f64> {
+    let x = NativeEndian::read_f64(&[
+        byte_arr[0],
+        byte_arr[1],
+        byte_arr[2],
+        byte_arr[3],
+        byte_arr[4],
+        byte_arr[5],
+        byte_arr[6],
+        byte_arr[7],
+    ]);
+    let y = NativeEndian::read_f64(&[
+        byte_arr[8],
+        byte_arr[9],
+        byte_arr[10],
+        byte_arr[11],
+        byte_arr[12],
+        byte_arr[13],
+        byte_arr[14],
+        byte_arr[15],
+    ]);
 
-    CompCoord { 0: Coordinate { x, y } }
+    CompCoord {
+        0: Coordinate { x, y },
+    }
 }
 
 /// Returns the coordinate at which two geometries intersect
 pub trait IntersectionPoint<T>
-where T: num_traits::Float,
+where
+    T: num_traits::Float,
 {
     fn intersection_point(&self, line: &Line<T>) -> Coordinate<T>;
 }
 
 impl<T> IntersectionPoint<T> for Line<T>
-    where
-        T: num_traits::Float,
+where
+    T: num_traits::Float,
 {
     // See https://www.geeksforgeeks.org/program-for-point-of-intersection-of-two-lines/
     fn intersection_point(&self, line: &Line<T>) -> Coordinate<T> {
@@ -241,7 +361,8 @@ impl<T> IntersectionPoint<T> for Line<T>
         let c2 = a2 * (line.start.x) + b2 * (line.start.y);
 
         let determinant = a1 * b2 - a2 * b1;
-        return if determinant.is_normal() // Will this be problematic in cases where determinant is subnormal?
+        if determinant.is_normal()
+        // == T::from(0).unwrap() // Will this be problematic in cases where determinant is subnormal?
         {
             let x = (b2 * c1 - b1 * c2) / determinant;
             let y = (a1 * c2 - a2 * c1) / determinant;
@@ -250,7 +371,7 @@ impl<T> IntersectionPoint<T> for Line<T>
             // Parallel lines never intersect (hence infinity)
             Coordinate {
                 x: T::infinity(),
-                y: T::infinity()
+                y: T::infinity(),
             }
         }
     }
@@ -262,7 +383,6 @@ impl<T> IntersectionPoint<T> for Line<T>
 mod tests {
     use super::*;
     use geo_types::{line_string, point, polygon};
-    use std::fmt::Debug;
 
     #[test]
     fn can_validate_polygon() {
@@ -342,13 +462,12 @@ mod tests {
 
         assert_eq!(valid.point_touching_line[0].x, 50_f64);
         assert_eq!(valid.point_touching_line[0].y, 50_f64);
-
     }
 
     #[test]
     fn can_recognize_self_intersecting_polygon() {
         let poly = polygon![
-            (x: 1.0, y: 1.0),
+            (x: 1.0_f64, y: 1.0),
             (x: 4.0, y: 1.0),
             (x: 1.0, y: 4.0),
             (x: 4.0, y: 4.0),
