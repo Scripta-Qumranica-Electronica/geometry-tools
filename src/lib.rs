@@ -8,9 +8,9 @@ mod geometry_boolean;
 mod geometry_normalize;
 mod geometry_svg_reader;
 mod geometry_svg_writer;
+mod geometry_validator;
 mod geometry_wkt_writer;
 mod json_errors;
-mod polygon_validator;
 mod utils;
 use wasm_bindgen::prelude::*;
 

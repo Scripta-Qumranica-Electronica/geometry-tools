@@ -6,6 +6,7 @@ use wasm_bindgen::JsValue;
 
 use xml::reader::{EventReader, XmlEvent};
 
+// TODO: all errors should be real error here, not JsValue
 pub fn to_geometry(svg: &str) -> Result<Geometry<f64>, JsValue> {
     let parser = EventReader::new(svg.as_bytes());
     for e in parser {

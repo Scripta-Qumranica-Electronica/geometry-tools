@@ -2,9 +2,9 @@ extern crate geo_booleanop;
 extern crate geo_types;
 extern crate wkt;
 
+use crate::geometry_validator::Validate;
 use crate::geometry_wkt_writer::ToWkt;
 use crate::json_errors;
-use crate::polygon_validator::Validate;
 use geo_booleanop::boolean::BooleanOp;
 use geo_types::Geometry;
 use wasm_bindgen::JsValue;
@@ -112,9 +112,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use geo_types::{
-        LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon,
-    };
+    use geo_types::{LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon};
 
     #[test]
     fn can_wkt_union_polygons() {
