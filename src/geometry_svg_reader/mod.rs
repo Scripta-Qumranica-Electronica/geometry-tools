@@ -1,8 +1,12 @@
 use crate::geometry_normalize::Normalized;
 use flo_curves::bezier::{de_casteljau3, de_casteljau4};
 use flo_curves::{Coord2, Coordinate2D};
-use geo_types::{Coordinate, Geometry, Line, LineString, Polygon, Rect};
-use std::convert::{From, TryInto};
+use geo_booleanop::boolean::BooleanOp;
+use geo_types::{
+    line_string, Coordinate, Geometry, GeometryCollection, Line, LineString, MultiLineString,
+    MultiPolygon, Polygon, Rect,
+};
+use std::convert::From;
 use std::fmt;
 use svgtypes::{PathParser, PathSegment, PointsParser};
 use xml::reader::{EventReader, XmlEvent};
@@ -51,7 +55,7 @@ impl fmt::Debug for InvalidSvgError {
     }
 }
 
-pub fn to_geometry(svg: &str) -> Result<Geometry<f64>, SvgError> {
+pub fn to_geometry(svg: &str) -> Result<GeometryCollection<f64>, SvgError> {
     let parser = EventReader::new(svg.as_bytes());
     for e in parser {
         if let Ok(XmlEvent::StartElement {
@@ -63,7 +67,7 @@ pub fn to_geometry(svg: &str) -> Result<Geometry<f64>, SvgError> {
                 for attr in attributes {
                     if attr.name.local_name == "d" {
                         let res = svg_d_path_to_geometry(&attr.value)?;
-                        return Ok(res.into());
+                        return Ok(res);
                     }
                 }
             }
@@ -237,26 +241,24 @@ fn svg_line_to_geometry(start_x: &f64, start_y: &f64, end_x: &f64, end_y: &f64) 
     )
 }
 
-fn svg_d_path_to_geometry(svg: &str) -> Result<Polygon<f64>, SvgError> {
-    // Store the Vec<Coordinate> for each ring, the first one will be the outer ring
-    // TODO: find out if it is possible for any other ring in the SVG to be the outer, or only the first one
-    let mut rings = vec![] as Vec<Vec<Coordinate<f64>>>;
-    let mut ring_count = 0;
-    let mut first_ring = true;
+fn svg_d_path_to_geometry(svg: &str) -> Result<GeometryCollection<f64>, SvgError> {
+    // We will collect the separate paths (from M to M) into segments for parsing
+    let mut path_segments = vec![] as Vec<Vec<Coordinate<f64>>>;
+    let mut segment_count = 0;
+    let mut first_segment = true;
     let zero_coord = Coordinate { x: 0_f64, y: 0_f64 }; // Default values to be added to relative coords
     let mut last_point: Option<Coordinate<f64>> = None; // Store last point for relative coordinates
     let mut last_control_point: Option<Coord2> = None; // Store last control point for S and T coordinates
     let p = PathParser::from(svg);
-    // TODO: implement curves as well
     for token in p {
         let t = token.unwrap();
         match t {
             PathSegment::MoveTo { .. } => {
-                rings.push(vec![] as Vec<Coordinate<f64>>);
-                if !first_ring {
-                    ring_count += 1;
+                path_segments.push(vec![] as Vec<Coordinate<f64>>);
+                if !first_segment {
+                    segment_count += 1;
                 } else {
-                    first_ring = false;
+                    first_segment = false;
                 }
                 let coord = Coordinate {
                     x: if t.is_relative() {
@@ -271,7 +273,7 @@ fn svg_d_path_to_geometry(svg: &str) -> Result<Polygon<f64>, SvgError> {
                     },
                 };
                 last_point = Some(coord);
-                rings[ring_count].push(coord);
+                path_segments[segment_count].push(coord);
             }
             PathSegment::LineTo { .. } => {
                 let coord = Coordinate {
@@ -287,7 +289,7 @@ fn svg_d_path_to_geometry(svg: &str) -> Result<Polygon<f64>, SvgError> {
                     },
                 };
                 last_point = Some(coord);
-                rings[ring_count].push(coord);
+                path_segments[segment_count].push(coord);
             }
             PathSegment::HorizontalLineTo { .. } => {
                 let coord = Coordinate {
@@ -299,7 +301,7 @@ fn svg_d_path_to_geometry(svg: &str) -> Result<Polygon<f64>, SvgError> {
                     y: last_point.unwrap_or(zero_coord).y,
                 };
                 last_point = Some(coord);
-                rings[ring_count].push(coord);
+                path_segments[segment_count].push(coord);
             }
             PathSegment::VerticalLineTo { .. } => {
                 let coord = Coordinate {
@@ -311,7 +313,7 @@ fn svg_d_path_to_geometry(svg: &str) -> Result<Polygon<f64>, SvgError> {
                     },
                 };
                 last_point = Some(coord);
-                rings[ring_count].push(coord);
+                path_segments[segment_count].push(coord);
             }
             PathSegment::CurveTo {
                 x,
@@ -344,12 +346,12 @@ fn svg_d_path_to_geometry(svg: &str) -> Result<Polygon<f64>, SvgError> {
                         control_2,
                         end_point,
                     );
-                    rings[ring_count].push(Coordinate {
+                    path_segments[segment_count].push(Coordinate {
                         x: arc_point.x(),
                         y: arc_point.y(),
                     });
                 }
-                rings[ring_count].push(end);
+                path_segments[segment_count].push(end);
             }
             PathSegment::SmoothCurveTo { x2, x, y2, y, abs } => {
                 let last = last_point.unwrap_or(zero_coord);
@@ -374,12 +376,12 @@ fn svg_d_path_to_geometry(svg: &str) -> Result<Polygon<f64>, SvgError> {
                         control_2,
                         end_point,
                     );
-                    rings[ring_count].push(Coordinate {
+                    path_segments[segment_count].push(Coordinate {
                         x: arc_point.x(),
                         y: arc_point.y(),
                     });
                 }
-                rings[ring_count].push(end);
+                path_segments[segment_count].push(end);
             }
             PathSegment::Quadratic { x1, x, y1, y, abs } => {
                 let last = last_point.unwrap_or(zero_coord);
@@ -398,12 +400,12 @@ fn svg_d_path_to_geometry(svg: &str) -> Result<Polygon<f64>, SvgError> {
                 for x in 1..100 {
                     let arc_point =
                         de_casteljau3(x as f64 / 100_f64, start_point, control_1, end_point);
-                    rings[ring_count].push(Coordinate {
+                    path_segments[segment_count].push(Coordinate {
                         x: arc_point.x(),
                         y: arc_point.y(),
                     });
                 }
-                rings[ring_count].push(end);
+                path_segments[segment_count].push(end);
             }
             PathSegment::SmoothQuadratic { x, y, abs } => {
                 let last = last_point.unwrap_or(zero_coord);
@@ -422,33 +424,29 @@ fn svg_d_path_to_geometry(svg: &str) -> Result<Polygon<f64>, SvgError> {
                 for x in 1..100 {
                     let arc_point =
                         de_casteljau3(x as f64 / 100_f64, start_point, control_1, end_point);
-                    rings[ring_count].push(Coordinate {
+                    path_segments[segment_count].push(Coordinate {
                         x: arc_point.x(),
                         y: arc_point.y(),
                     });
                 }
-                rings[ring_count].push(end);
+                path_segments[segment_count].push(end);
             }
             // TODO: PathSegment::EllipticalArc
             PathSegment::ClosePath { .. } => {
                 let coord = Coordinate {
-                    x: rings[ring_count][0].x,
-                    y: rings[ring_count][0].y,
+                    x: path_segments[segment_count][0].x,
+                    y: path_segments[segment_count][0].y,
                 };
                 last_point = Some(coord);
-                rings[ring_count].push(coord);
+                path_segments[segment_count].push(coord);
             }
             _ => last_point = None,
         }
     }
-    if rings.is_empty() {
+    if path_segments.is_empty() {
         return Err(SvgError::InvalidSvgError(InvalidSvgError));
     }
-
-    let mut rings_iter = rings.iter();
-    let outer_ring: LineString<f64> = LineString::from(rings_iter.next().unwrap().clone());
-    let inner_rings = rings_iter.map(|x| LineString::from(x.clone())).collect();
-    Ok(Polygon::new(outer_ring, inner_rings).normalized())
+    Ok(parse_path_segments_to_geom(&path_segments))
 }
 
 fn calculate_svg_coord2(x: f64, y: f64, last: Coordinate<f64>, abs: bool) -> Coord2 {
@@ -463,6 +461,111 @@ fn reflect_point(orig: Coordinate<f64>, pr: Coord2) -> Coord2 {
     let y_step = pr.y() - orig.y;
 
     Coord2(orig.x - x_step, orig.y - y_step)
+}
+
+fn parse_path_segments_to_geom(paths: &Vec<Vec<Coordinate<f64>>>) -> GeometryCollection<f64> {
+    let mut lines = vec![] as Vec<Line<f64>>;
+    let mut line_strings = vec![] as Vec<LineString<f64>>;
+    let mut poly_line_strings = vec![] as Vec<LineString<f64>>;
+    let mut polygons: MultiPolygon<f64> = (vec![] as Vec<Polygon<f64>>).into();
+
+    for path in paths {
+        let length = path.len();
+        if length == 0 {
+            continue;
+        } else if length == 2 {
+            lines.push(Line::new(path[0], path[1]));
+        } else if !path.first().unwrap().eq(path.last().unwrap()) {
+            line_strings.push(path.clone().into());
+        } else {
+            poly_line_strings.push(path.clone().into());
+        }
+    }
+
+    if !poly_line_strings.is_empty() {
+        if poly_line_strings.len() == 1 {
+            polygons = Polygon::new(poly_line_strings[0].clone(), vec![]).into();
+        } else {
+            polygons = parse_polygon_rings_to_geom(&poly_line_strings);
+        }
+    }
+
+    let number_of_geom_types = !lines.is_empty() as i32
+        + !line_strings.is_empty() as i32
+        + !poly_line_strings.is_empty() as i32;
+
+    let mut geom_collection = vec![] as Vec<Geometry<f64>>;
+    if !lines.is_empty() {
+        let return_lines = map_lines_to_geometry(&lines);
+        if number_of_geom_types == 1 {
+            return GeometryCollection(vec![return_lines]);
+        } else {
+            geom_collection.push(return_lines);
+        }
+    } else if !line_strings.is_empty() {
+        let return_line_strings = map_line_strings_to_geometry(&line_strings);
+        if number_of_geom_types == 1 {
+            return GeometryCollection(vec![return_line_strings]);
+        } else {
+            geom_collection.push(return_line_strings);
+        }
+    } else if !polygons.0.is_empty() {
+        let return_polygons = map_polygons_to_geometry(polygons);
+        if number_of_geom_types == 1 {
+            return GeometryCollection(vec![return_polygons]);
+        } else {
+            geom_collection.push(return_polygons);
+        }
+    }
+
+    GeometryCollection(geom_collection)
+}
+
+fn parse_polygon_rings_to_geom(rings: &Vec<LineString<f64>>) -> MultiPolygon<f64> {
+    // Early return for empty vector
+    if rings.len() == 0 {
+        return (vec![] as Vec<Polygon<f64>>).into();
+    }
+
+    let mut ring_iter = rings.iter();
+    let mut result_poly = MultiPolygon(vec![Polygon::new(
+        ring_iter.next().unwrap().clone(),
+        vec![],
+    )]);
+    for ring in ring_iter {
+        let poly = Polygon::new(ring.clone(), vec![]);
+        result_poly = result_poly.xor(&poly);
+    }
+    result_poly.0.iter().map(|x| x.normalized()).collect()
+}
+
+fn map_lines_to_geometry(lines: &Vec<Line<f64>>) -> Geometry<f64> {
+    if lines.len() == 1 {
+        lines[0].into()
+    } else {
+        let multi_line: MultiLineString<f64> = lines
+            .iter()
+            .map(|x| LineString(vec![x.start, x.end]))
+            .collect();
+        multi_line.into()
+    }
+}
+
+fn map_line_strings_to_geometry(line_strings: &Vec<LineString<f64>>) -> Geometry<f64> {
+    if line_strings.len() == 1 {
+        line_strings[0].clone().into()
+    } else {
+        let multi_line: MultiLineString<f64> = MultiLineString(line_strings.to_vec());
+        multi_line.into()
+    }
+}
+
+fn map_polygons_to_geometry(polys: MultiPolygon<f64>) -> Geometry<f64> {
+    if polys.0.len() == 1 {
+        polys.0[0].clone().into()
+    } else {
+        polys.into()
+    }
 }
 
 /** Tests */
@@ -493,12 +596,16 @@ mod tests {
         let svg_string = String::from("M0 0l0 60l60 0L60 0L0 0M10 10L40 1L40 40L10.5 40L10 10");
         let parsed_svg = svg_d_path_to_geometry(&svg_string);
         assert_eq!(parsed_svg.is_ok(), true);
-        assert_eq!(parsed_svg.ok().unwrap(), poly);
+        let geom = parsed_svg.ok().unwrap();
+        assert_eq!(1, geom.0.len());
+        let pl = geom.0[0].clone().into_polygon();
+        assert_eq!(true, pl.is_some());
+        assert_eq!(pl.unwrap(), poly);
     }
 
     #[test]
     fn can_convert_svg_path_test() {
-        let poly: Geometry<f64> = polygon!(
+        let poly: Polygon<f64> = polygon!(
         exterior: [
             (x: 0.0_f64, y: 0.0),
             (x: 0.0, y: 60.0),
@@ -518,12 +625,16 @@ mod tests {
             String::from(r#"<path d="M0 0L0 60L60 60L60 0L0 0M10 10L40 1L40 40L10.5 40L10 10"/>"#);
         let parsed_svg = to_geometry(&svg_string);
         assert_eq!(parsed_svg.is_ok(), true);
-        assert_eq!(parsed_svg.ok().unwrap(), poly);
+        let geom = parsed_svg.ok().unwrap();
+        assert_eq!(1, geom.0.len());
+        let pl = geom.0[0].clone().into_polygon();
+        assert_eq!(true, pl.is_some());
+        assert_eq!(poly, pl.unwrap());
     }
 
     #[test]
     fn can_convert_svg_h_v_path_test() {
-        let poly: Geometry<f64> = polygon!(
+        let poly: Polygon<f64> = polygon!(
         exterior: [
             (x: 0.0_f64, y: 0.0),
             (x: 0.0, y: 60.0),
@@ -543,7 +654,11 @@ mod tests {
             String::from(r#"<path d="M0 0v60h60v-60h-60M10 10L40 1L40 40L10.5 40L10 10"/>"#);
         let parsed_svg = to_geometry(&svg_string);
         assert_eq!(parsed_svg.is_ok(), true);
-        assert_eq!(parsed_svg.ok().unwrap(), poly);
+        let geom = parsed_svg.ok().unwrap();
+        assert_eq!(1, geom.0.len());
+        let pl = geom.0[0].clone().into_polygon();
+        assert_eq!(true, pl.is_some());
+        assert_eq!(poly, pl.unwrap());
     }
 
     #[test]
@@ -563,7 +678,8 @@ mod tests {
     #[test]
     fn can_convert_svg_q_t_path_test() {
         let solution = String::from(
-            r#"<path d="M0 0L0.598 0.796L1.192 1.584L1.7819999999999998 2.364L2.368 3.136L2.95 3.9L3.5279999999999996 4.655999999999999L4.102 5.404L4.672000000000001 6.144000000000001L5.2379999999999995 6.8759999999999994L5.800000000000001 7.6L6.3580000000000005 8.316L6.911999999999999 9.024000000000001L7.462 9.724L8.008000000000001 10.416L8.549999999999999 11.1L9.088000000000001 11.776L9.622 12.444L10.152000000000001 13.104L10.678 13.756L11.200000000000001 14.4L11.718 15.036000000000001L12.232 15.664000000000001L12.742 16.284000000000002L13.248 16.896L13.75 17.5L14.248000000000001 18.096L14.742 18.684L15.232 19.264000000000003L15.717999999999998 19.836L16.2 20.4L16.678 20.956L17.152 21.503999999999998L17.622 22.044L18.088 22.576L18.55 23.1L19.007999999999996 23.616L19.462 24.124000000000002L19.912 24.624L20.358000000000004 25.116L20.8 25.6L21.238 26.076L21.672 26.544000000000004L22.102 27.003999999999998L22.528000000000002 27.456000000000003L22.950000000000003 27.9L23.368000000000006 28.336000000000006L23.781999999999996 28.763999999999996L24.191999999999997 29.183999999999997L24.598000000000003 29.596000000000004L25 30L25.397999999999996 30.395999999999997L25.792 30.784L26.182000000000002 31.164L26.568 31.536L26.950000000000003 31.9L27.328000000000003 32.256L27.701999999999998 32.604L28.071999999999996 32.944L28.438 33.275999999999996L28.799999999999997 33.6L29.158 33.916L29.512000000000004 34.224000000000004L29.862 34.524L30.208 34.816L30.55 35.1L30.888 35.376000000000005L31.222 35.644L31.552 35.904L31.878 36.156L32.2 36.400000000000006L32.518 36.635999999999996L32.831999999999994 36.864L33.141999999999996 37.084L33.44800000000001 37.296L33.75 37.5L34.047999999999995 37.696L34.342000000000006 37.884L34.632000000000005 38.064L34.918 38.236000000000004L35.2 38.4L35.478 38.556000000000004L35.751999999999995 38.704L36.02199999999999 38.843999999999994L36.288000000000004 38.976L36.550000000000004 39.1L36.808 39.216L37.062 39.324L37.312000000000005 39.42400000000001L37.558 39.516L37.8 39.6L38.038 39.675999999999995L38.272000000000006 39.744L38.502 39.804L38.727999999999994 39.855999999999995L38.95 39.9L39.168 39.936L39.38199999999999 39.964L39.592000000000006 39.984L39.797999999999995 39.996L40 40L40.199999999999996 40.002L40.4 40.008L40.599999999999994 40.017999999999994L40.8 40.032L41 40.05L41.199999999999996 40.071999999999996L41.39999999999999 40.09799999999999L41.60000000000001 40.128000000000014L41.8 40.162L42 40.2L42.2 40.242000000000004L42.4 40.288000000000004L42.599999999999994 40.337999999999994L42.8 40.391999999999996L43 40.45L43.2 40.512L43.4 40.577999999999996L43.6 40.648L43.80000000000001 40.72200000000001L44 40.8L44.2 40.882000000000005L44.400000000000006 40.968L44.599999999999994 41.058L44.8 41.152L45 41.25L45.2 41.352000000000004L45.400000000000006 41.458L45.599999999999994 41.568L45.8 41.681999999999995L46 41.8L46.199999999999996 41.922L46.39999999999999 42.047999999999995L46.599999999999994 42.178L46.8 42.312L47 42.45L47.199999999999996 42.592L47.400000000000006 42.738L47.599999999999994 42.888000000000005L47.800000000000004 43.042L48 43.2L48.2 43.362L48.400000000000006 43.528000000000006L48.60000000000001 43.69800000000001L48.80000000000001 43.872L49 44.05L49.2 44.232L49.400000000000006 44.418000000000006L49.599999999999994 44.608L49.8 44.80199999999999L50 45L50.2 45.202L50.400000000000006 45.408L50.599999999999994 45.617999999999995L50.8 45.83200000000001L51 46.05L51.199999999999996 46.272000000000006L51.400000000000006 46.498000000000005L51.599999999999994 46.727999999999994L51.8 46.962L52 47.2L52.2 47.44200000000001L52.400000000000006 47.688L52.6 47.938L52.8 48.192L53 48.45L53.199999999999996 48.712L53.400000000000006 48.97800000000001L53.6 49.248L53.80000000000001 49.52199999999999L54 49.8L54.2 50.081999999999994L54.4 50.368L54.599999999999994 50.658L54.8 50.952L55 51.25L55.2 51.55200000000001L55.400000000000006 51.858000000000004L55.6 52.168L55.800000000000004 52.482000000000006L56 52.800000000000004L56.199999999999996 53.122L56.4 53.448L56.599999999999994 53.778000000000006L56.8 54.111999999999995L57 54.449999999999996L57.2 54.792L57.400000000000006 55.138000000000005L57.6 55.48799999999999L57.8 55.842L58 56.2L58.2 56.562000000000005L58.400000000000006 56.928L58.60000000000001 57.298L58.800000000000004 57.672L59 58.05L59.199999999999996 58.431999999999995L59.39999999999999 58.818L59.6 59.208L59.8 59.602L60 60L60 0L0 0M10 10L20 10L20 20L10 20L10 10"/>"#,
+            r#"<path d="M0 0L0.598 0.796L1.192 1.584L1.7819999999999998 2.364L2.368 3.136L2.95 3.9L3.5279999999999996 4.655999999999999L4.102 5.404L4.672000000000001 6.144000000000001L5.2379999999999995 6.8759999999999994L5.800000000000001 7.6L6.3580000000000005 8.316L6.911999999999999 9.024000000000001L7.462 9.724L8.008000000000001 10.416L8.549999999999999 11.1L9.088000000000001 11.776L9.622 12.444L10 12.914716981132074L10 10L20 10L20 20L15.858156028368795 20L16.2 20.4L16.678 20.956L17.152 21.503999999999998L17.622 22.044L18.088 22.576L18.55 23.1L19.007999999999996 23.616L19.462 24.124000000000002L19.912 24.624L20.358000000000004 25.116L20.8 25.6L21.238 26.076L21.672 26.544000000000004L22.102 27.003999999999998L22.528000000000002 27.456000000000003L22.950000000000003 27.9L23.368000000000006 28.336000000000006L23.781999999999996 28.763999999999996L24.191999999999997 29.183999999999997L24.598000000000003 29.596000000000004L25 30L25.397999999999996 30.395999999999997L25.792 30.784L26.182000000000002 31.164L26.568 31.536L26.950000000000003 31.9L27.328000000000003 32.256L27.701999999999998 32.604L28.071999999999996 32.944L28.438 33.275999999999996L28.799999999999997 33.6L29.158 33.916L29.512000000000004 34.224000000000004L29.862 34.524L30.208 34.816L30.55 35.1L30.888 35.376000000000005L31.222 35.644L31.552 35.904L31.878 36.156L32.2 36.400000000000006L32.518 36.635999999999996L32.831999999999994 36.864L33.141999999999996 37.084L33.44800000000001 37.296L33.75 37.5L34.047999999999995 37.696L34.342000000000006 37.884L34.632000000000005 38.064L34.918 38.236000000000004L35.2 38.4L35.478 38.556000000000004L35.751999999999995 38.704L36.02199999999999 38.843999999999994L36.288000000000004 38.976L36.550000000000004 39.1L36.808 39.216L37.062 39.324L37.312000000000005 39.42400000000001L37.558 39.516L37.8 39.6L38.038 39.675999999999995L38.272000000000006 39.744L38.502 39.804L38.727999999999994 39.855999999999995L38.95 39.9L39.168 39.936L39.38199999999999 39.964L39.592000000000006 39.984L39.797999999999995 39.996L40 40L40.199999999999996 40.002L40.4 40.008L40.599999999999994 40.017999999999994L40.8 40.032L41 40.05L41.199999999999996 40.071999999999996L41.39999999999999 40.09799999999999L41.60000000000001 40.128000000000014L41.8 40.162L42 40.2L42.2 40.242000000000004L42.4 40.288000000000004L42.599999999999994 40.337999999999994L42.8 40.391999999999996L43 40.45L43.2 40.512L43.4 40.577999999999996L43.6 40.648L43.80000000000001 40.72200000000001L44 40.8L44.2 40.882000000000005L44.400000000000006 40.968L44.599999999999994 41.058L44.8 41.152L45 41.25L45.2 41.352000000000004L45.400000000000006 41.458L45.599999999999994 41.568L45.8 41.681999999999995L46 41.8L46.199999999999996 41.922L46.39999999999999 42.047999999999995L46.599999999999994 42.178L46.8 42.312L47 42.45L47.199999999999996 42.592L47.400000000000006 42.738L47.599999999999994 42.888000000000005L47.800000000000004 43.042L48 43.2L48.2 43.362L48.400000000000006 43.528000000000006L48.60000000000001 43.69800000000001L48.80000000000001 43.872L49 44.05L49.2 44.232L49.400000000000006 44.418000000000006L49.599999999999994 44.608L49.8 44.80199999999999L50 45L50.2 45.202L50.400000000000006 45.408L50.599999999999994 45.617999999999995L50.8 45.83200000000001L51 46.05L51.199999999999996 46.272000000000006L51.400000000000006 46.498000000000005L51.599999999999994 46.727999999999994L51.8 46.962L52 47.2L52.2 47.44200000000001L52.400000000000006 47.688L52.6 47.938L52.8 48.192L53 48.45L53.199999999999996 48.712L53.400000000000006 48.97800000000001L53.6 49.248L53.80000000000001 49.52199999999999L54 49.8L54.2 50.081999999999994L54.4 50.368L54.599999999999994 50.658L54.8 50.952L55 51.25L55.2 51.55200000000001L55.400000000000006 51.858000000000004L55.6 52.168L55.800000000000004 52.482000000000006L56 52.800000000000004L56.199999999999996 53.122L56.4 53.448L56.599999999999994 53.778000000000006L56.8 54.111999999999995L57 54.449999999999996L57.2 54.792L57.400000000000006 55.138000000000005L57.6 55.48799999999999L57.8 55.842L58 56.2L58.2 56.562000000000005L58.400000000000006 56.928L58.60000000000001 57.298L58.800000000000004 57.672L59 58.05L59.199999999999996 58.431999999999995L59.39999999999999 58.818L59.6 59.208L59.8 59.602L60 60L60 0L0 0"/>
+<path d="M10 12.914716981132074L10 20L15.858156028368795 20L15.717999999999998 19.836L15.232 19.264000000000003L14.742 18.684L14.248000000000001 18.096L13.75 17.5L13.248 16.896L12.742 16.284000000000002L12.232 15.664000000000001L11.718 15.036000000000001L11.200000000000001 14.4L10.678 13.756L10.152000000000001 13.104L10 12.914716981132074"/>"#,
         );
         let svg_string = String::from(
             r#"<path d="M0 0Q30 40 40 40T60 60L60 0ZM10 10L20 10L20 20L10 20L10 10" />"#,
@@ -576,7 +692,7 @@ mod tests {
 
     #[test]
     fn can_convert_svg_polygon_test() {
-        let poly: Geometry<f64> = polygon!(
+        let poly: Polygon<f64> = polygon!(
         exterior: [
             (x: 0.0_f64, y: 0.0),
             (x: 0.0, y: 60.0),
@@ -589,12 +705,16 @@ mod tests {
         let svg_string = String::from(r#"<polygon points="0, 0 60, 0 60, 60 0, 60 0, 0"/>"#);
         let parsed_svg = to_geometry(&svg_string);
         assert_eq!(parsed_svg.is_ok(), true);
-        assert_eq!(parsed_svg.ok().unwrap(), poly);
+        let geom = parsed_svg.ok().unwrap();
+        assert_eq!(1, geom.0.len());
+        let pl = geom.0[0].clone().into_polygon();
+        assert_eq!(true, pl.is_some());
+        assert_eq!(poly, pl.unwrap());
     }
 
     #[test]
     fn can_convert_svg_polyline_test() {
-        let line: Geometry<f64> = line_string![
+        let line: LineString<f64> = line_string![
             (x: 0.0_f64, y: 0.0),
             (x: 0.0, y: 60.0),
             (x: 60.0, y: 60.0),
@@ -603,12 +723,16 @@ mod tests {
         let svg_string = String::from(r#"<polyline points="0, 0 0, 60 60, 60 60, 0"/>"#);
         let parsed_svg = to_geometry(&svg_string);
         assert_eq!(parsed_svg.is_ok(), true);
-        assert_eq!(parsed_svg.ok().unwrap(), line);
+        let geom = parsed_svg.ok().unwrap();
+        assert_eq!(1, geom.0.len());
+        let pl = geom.0[0].clone().into_line_string();
+        assert_eq!(true, pl.is_some());
+        assert_eq!(line, pl.unwrap());
     }
 
     #[test]
     fn can_convert_svg_rect_test() {
-        let poly: Geometry<f64> = polygon!(
+        let poly: Polygon<f64> = polygon!(
         exterior: [
             (x: 0.0_f64, y: 0.0),
             (x: 0.0, y: 60.0),
@@ -621,6 +745,10 @@ mod tests {
         let svg_string = String::from(r#"<rect x="0" y="0" width="60" height="60"/>"#);
         let parsed_svg = to_geometry(&svg_string);
         assert_eq!(parsed_svg.is_ok(), true);
-        assert_eq!(parsed_svg.ok().unwrap(), poly);
+        let geom = parsed_svg.ok().unwrap();
+        assert_eq!(1, geom.0.len());
+        let pl = geom.0[0].clone().into_polygon();
+        assert_eq!(true, pl.is_some());
+        assert_eq!(poly, pl.unwrap());
     }
 }
