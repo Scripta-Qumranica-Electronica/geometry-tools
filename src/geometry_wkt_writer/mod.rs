@@ -1,7 +1,8 @@
 extern crate geo;
 
+use crate::geometry_normalize::Normalized;
 use geo_types::{
-    Coordinate, Geometry, GeometryCollection, LineString, MultiLineString, MultiPoint,
+    Coordinate, Geometry, GeometryCollection, Line, LineString, MultiLineString, MultiPoint,
     MultiPolygon, Point, Polygon,
 };
 use std::fmt;
@@ -12,10 +13,7 @@ pub trait ToWkt {
 
 /** Geometries */
 
-impl<T> ToWkt for GeometryCollection<T>
-where
-    T: num_traits::Float + fmt::Display,
-{
+impl<T: num_traits::Float + fmt::Display> ToWkt for GeometryCollection<T> {
     fn to_wkt(&self) -> String {
         if self.is_empty() {
             "GEOMETRYCOLLECTION EMPTY".into()
@@ -32,10 +30,7 @@ where
     }
 }
 
-impl<T> ToWkt for Geometry<T>
-where
-    T: num_traits::Float + fmt::Display,
-{
+impl<T: num_traits::Float + fmt::Display> ToWkt for Geometry<T> {
     fn to_wkt(&self) -> String {
         match self {
             Geometry::MultiPolygon { .. } => self.clone().into_multi_polygon().unwrap().to_wkt(),
@@ -52,19 +47,13 @@ where
 
 /** Polygons */
 
-impl<T> ToWkt for MultiPolygon<T>
-where
-    T: num_traits::Float + fmt::Display,
-{
+impl<T: num_traits::Float + fmt::Display> ToWkt for MultiPolygon<T> {
     fn to_wkt(&self) -> String {
         multi_polygon_to_wkt(self)
     }
 }
 
-fn multi_polygon_to_wkt<T>(poly: &MultiPolygon<T>) -> String
-where
-    T: num_traits::Float + fmt::Display,
-{
+fn multi_polygon_to_wkt<T: num_traits::Float + fmt::Display>(poly: &MultiPolygon<T>) -> String {
     if poly.0.is_empty() {
         "MULTIPOLYGON EMPTY".into()
     } else {
@@ -79,19 +68,13 @@ where
     }
 }
 
-impl<T> ToWkt for Polygon<T>
-where
-    T: num_traits::Float + fmt::Display,
-{
+impl<T: num_traits::Float + fmt::Display> ToWkt for Polygon<T> {
     fn to_wkt(&self) -> String {
         polygon_to_wkt(self)
     }
 }
 
-fn polygon_to_wkt<T>(poly: &Polygon<T>) -> String
-where
-    T: num_traits::Float + fmt::Display,
-{
+fn polygon_to_wkt<T: num_traits::Float + fmt::Display>(poly: &Polygon<T>) -> String {
     if poly.exterior().0.is_empty() {
         "POLYGON EMPTY".into()
     } else {
@@ -99,12 +82,10 @@ where
     }
 }
 
-fn polygon_linestrings_to_wkt<T>(poly: &Polygon<T>) -> String
-where
-    T: num_traits::Float + fmt::Display,
-{
-    let mut lines: Vec<LineString<T>> = poly.interiors().into();
-    let exterior: &LineString<T> = poly.exterior();
+fn polygon_linestrings_to_wkt<T: num_traits::Float + fmt::Display>(poly: &Polygon<T>) -> String {
+    let norm_poly = poly.normalized();
+    let mut lines: Vec<LineString<T>> = norm_poly.interiors().into();
+    let exterior: &LineString<T> = norm_poly.exterior();
     lines.insert(0, exterior.clone());
 
     lines
@@ -116,19 +97,15 @@ where
 
 /** Lines */
 
-impl<T> ToWkt for MultiLineString<T>
-where
-    T: num_traits::Float + fmt::Display,
-{
+impl<T: num_traits::Float + fmt::Display> ToWkt for MultiLineString<T> {
     fn to_wkt(&self) -> String {
         multi_linestring_to_wkt(self)
     }
 }
 
-fn multi_linestring_to_wkt<T>(multi_line: &MultiLineString<T>) -> String
-where
-    T: num_traits::Float + fmt::Display,
-{
+fn multi_linestring_to_wkt<T: num_traits::Float + fmt::Display>(
+    multi_line: &MultiLineString<T>,
+) -> String {
     if multi_line.0.is_empty() {
         "MULTILINESTRING EMPTY".into()
     } else {
@@ -144,19 +121,19 @@ where
     }
 }
 
-impl<T> ToWkt for LineString<T>
-where
-    T: num_traits::Float + fmt::Display,
-{
+impl<T: num_traits::Float + fmt::Display> ToWkt for LineString<T> {
     fn to_wkt(&self) -> String {
         linestring_to_wkt(self)
     }
 }
 
-fn linestring_to_wkt<T>(line: &LineString<T>) -> String
-where
-    T: num_traits::Float + fmt::Display,
-{
+impl<T: num_traits::Float + fmt::Display> ToWkt for Line<T> {
+    fn to_wkt(&self) -> String {
+        linestring_to_wkt(&LineString(vec![self.start, self.end]))
+    }
+}
+
+fn linestring_to_wkt<T: num_traits::Float + fmt::Display>(line: &LineString<T>) -> String {
     if line.0.is_empty() {
         "LINESTRING EMPTY".into()
     } else {
@@ -164,10 +141,7 @@ where
     }
 }
 
-fn line_to_wkt<T>(line: &LineString<T>) -> String
-where
-    T: num_traits::Float + fmt::Display,
-{
+fn line_to_wkt<T: num_traits::Float + fmt::Display>(line: &LineString<T>) -> String {
     line.0
         .iter()
         .map(|c| coord_to_wkt(&c))
@@ -177,19 +151,13 @@ where
 
 /** Points */
 
-impl<T> ToWkt for MultiPoint<T>
-where
-    T: num_traits::Float + fmt::Display,
-{
+impl<T: num_traits::Float + fmt::Display> ToWkt for MultiPoint<T> {
     fn to_wkt(&self) -> String {
         multi_point_to_wkt(self)
     }
 }
 
-fn multi_point_to_wkt<T>(multi_point: &MultiPoint<T>) -> String
-where
-    T: num_traits::Float + fmt::Display,
-{
+fn multi_point_to_wkt<T: num_traits::Float + fmt::Display>(multi_point: &MultiPoint<T>) -> String {
     if multi_point.0.is_empty() {
         "MULTIPOINT EMPTY".into()
     } else {
@@ -205,33 +173,21 @@ where
     }
 }
 
-impl<T> ToWkt for Point<T>
-where
-    T: num_traits::Float + fmt::Display,
-{
+impl<T: num_traits::Float + fmt::Display> ToWkt for Point<T> {
     fn to_wkt(&self) -> String {
         point_to_wkt(self)
     }
 }
 
-fn point_to_wkt<T>(point: &Point<T>) -> String
-where
-    T: num_traits::Float + fmt::Display,
-{
+fn point_to_wkt<T: num_traits::Float + fmt::Display>(point: &Point<T>) -> String {
     format!("POINT({})", point_to_string(point))
 }
 
-fn point_to_string<T>(point: &Point<T>) -> String
-where
-    T: num_traits::Float + fmt::Display,
-{
+fn point_to_string<T: num_traits::Float + fmt::Display>(point: &Point<T>) -> String {
     coord_to_wkt(&point.0)
 }
 
-fn coord_to_wkt<T>(coord: &Coordinate<T>) -> String
-where
-    T: num_traits::Float + fmt::Display,
-{
+fn coord_to_wkt<T: num_traits::Float + fmt::Display>(coord: &Coordinate<T>) -> String {
     format!("{} {}", coord.x, coord.y)
 }
 
@@ -255,7 +211,7 @@ mod tests {
         let gc = GeometryCollection(vec![pe, poly]);
         let wkt_out = gc.to_wkt();
         let expected =
-            String::from("GEOMETRYCOLLECTION(POINT(1 1),POLYGON((1 1,4 1,4 4,1 4,1 1)))");
+            String::from("GEOMETRYCOLLECTION(POINT(1 1),POLYGON((1 1,1 4,4 4,4 1,1 1)))");
         assert_eq!(wkt_out, expected);
     }
 
@@ -294,7 +250,7 @@ mod tests {
         let mp = MultiPolygon(vec![poly1, poly2]);
         let wkt_out = mp.to_wkt();
         let expected = String::from(
-            "MULTIPOLYGON(((1 1,4 1,4 4,1 4,1 1)),((0 0,6 0,6 6,0 6,0 0),(1 1,4 1,4 4,1.5 4,1 1)))",
+            "MULTIPOLYGON(((1 1,1 4,4 4,4 1,1 1)),((0 0,0 6,6 6,6 0,0 0),(1 1,4 1,4 4,1.5 4,1 1)))",
         );
         assert_eq!(wkt_out, expected);
     }
@@ -317,7 +273,7 @@ mod tests {
             (x: 1.0, y: 1.0),
         ];
         let wkt_out = poly.to_wkt();
-        let expected = String::from("POLYGON((1 1,4 1,4 4,1 4,1 1))");
+        let expected = String::from("POLYGON((1 1,1 4,4 4,4 1,1 1))");
         assert_eq!(wkt_out, expected);
     }
 
@@ -348,7 +304,7 @@ mod tests {
             ]
         );
         let wkt_out = poly.to_wkt();
-        let expected = String::from("POLYGON((0 0,6 0,6 6,0 6,0 0),(1 1,4 1,4 4,1.5 4,1 1))");
+        let expected = String::from("POLYGON((0 0,0 6,6 6,6 0,0 0),(1 1,4 1,4 4,1.5 4,1 1))");
         assert_eq!(wkt_out, expected);
     }
 

@@ -4,6 +4,7 @@
 //! SVG and WellKnown geometry types. It offers a set of validation functions
 //! along with the standard geometric boolean operations.
 //!
+mod convertors;
 mod geometry_boolean;
 mod geometry_normalize;
 mod geometry_svg_reader;
@@ -12,11 +13,17 @@ mod geometry_validator;
 mod geometry_wkt_writer;
 mod json_errors;
 mod utils;
+mod validators;
 use wasm_bindgen::prelude::*;
 
+use crate::geometry_svg_reader::to_geometry;
+use crate::geometry_svg_writer::{ToSvg, ToSvgString};
+use crate::geometry_wkt_writer::ToWkt;
+use geo_types::Geometry;
 use geometry_boolean::{
     wkt_multi_polygon_polygon_union, wkt_multi_polygon_union, wkt_polygon_union,
 };
+use wkt::Wkt;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
 // allocator.
@@ -105,6 +112,40 @@ fn get_geometry_type(geom: &str) -> Result<String, JsValue> {
         Some(&_) => Err(json_errors::wkt_errors::wkt_cannot_be_parsed(geom)),
         None => Err(json_errors::wkt_errors::wkt_cannot_be_parsed(geom)),
     }
+}
+
+/** Information */
+
+/// Returns the Geometry type recognized for the submitted SVG element.
+/// Only <path>, <polygon>. <polyline>, <rect>, and <line> will be recognized
+/// as valid Geom types.
+///
+#[wasm_bindgen(js_name = svgGeomType)]
+pub fn svg_geom_type(svg: String) -> String {
+    let geom = match to_geometry(&svg) {
+        Ok(geom) => geom,
+        Err(_) => return "None".into(),
+    };
+
+    if geom.0.len() > 1 {
+        return "GeometryCollection".into();
+    }
+
+    match geom.0[0] {
+        Geometry::MultiPolygon { .. } => "MultiPolygon".into(),
+        Geometry::Polygon { .. } => "Polygon".into(),
+        Geometry::MultiLineString { .. } => "MultiLineString".into(),
+        Geometry::LineString { .. } => "LineString".into(),
+        Geometry::Line { .. } => "Line".into(),
+        _ => "None".into(),
+    }
+}
+
+/// Returns the Geometry type recognized for the submitted SVG path d-string.
+///
+#[wasm_bindgen(js_name = svgPathGeomType)]
+pub fn svg_path_geom_type(d_string: String) -> String {
+    svg_geom_type(format!("<path d=\"{}\"/>", d_string))
 }
 
 /** Tests */
