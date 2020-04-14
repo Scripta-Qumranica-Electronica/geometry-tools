@@ -13,3 +13,5 @@ Cargo.lock
 # Ignore IDE files
 .idea/
 .vscode/
+
+www
