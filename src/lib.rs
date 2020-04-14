@@ -19,6 +19,7 @@ mod utils;
 mod validators;
 use wasm_bindgen::prelude::*;
 
+use crate::convertors::svg_to_wkt;
 use crate::geometry_svg_reader::to_geometry;
 use crate::geometry_svg_writer::{ToSvg, ToSvgString};
 use crate::geometry_wkt_writer::ToWkt;
@@ -44,7 +45,9 @@ extern "C" {
 pub fn greet() {
     alert("Hello, geometry-tools!");
 }
-
+pub fn exp_svg_to_wkt(svg: String) -> Result<String, JsValue> {
+    svg_to_wkt(svg)
+}
 /** Tests */
 
 #[cfg(test)]
