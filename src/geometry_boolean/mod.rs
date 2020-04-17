@@ -2,11 +2,11 @@ extern crate geo_booleanop;
 extern crate geo_types;
 extern crate wkt;
 
-use crate::geometry_validator::Validate;
-use crate::geometry_wkt_writer::ToWkt;
 use crate::json_errors;
 use geo_booleanop::boolean::BooleanOp;
 use geo_types::Geometry;
+use geo_validator::Validate;
+use geo_wkt_writer::ToWkt;
 use wasm_bindgen::JsValue;
 use wkt::Wkt;
 

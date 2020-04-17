@@ -1,5 +1,5 @@
-use crate::geometry_svg_reader::to_geometry;
 use crate::json_errors;
+use geo_svg_io::geo_svg_reader::svg_to_geometry;
 use geo_types::Geometry;
 use wasm_bindgen::prelude::*;
 
@@ -9,7 +9,7 @@ use wasm_bindgen::prelude::*;
 ///
 #[wasm_bindgen(js_name = svgGeomType)]
 pub fn svg_geom_type(svg: String) -> String {
-    let geom = match to_geometry(&svg) {
+    let geom = match svg_to_geometry(&svg) {
         Ok(geom) => geom,
         Err(_) => return "None".into(),
     };

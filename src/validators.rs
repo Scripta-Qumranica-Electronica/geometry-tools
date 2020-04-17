@@ -1,6 +1,6 @@
-use crate::geometry_svg_reader::to_geometry;
-use crate::geometry_validator::Validate;
+use geo_svg_io::geo_svg_reader::svg_to_geometry;
 use geo_types::Geometry;
+use geo_validator::Validate;
 use wasm_bindgen::prelude::*;
 
 /** Validators */
@@ -12,7 +12,7 @@ use wasm_bindgen::prelude::*;
 ///
 #[wasm_bindgen(js_name = svgIsValidGeom)]
 pub fn svg_is_valid_geom(svg: String) -> bool {
-    let geom = match to_geometry(&svg) {
+    let geom = match svg_to_geometry(&svg) {
         Ok(geom) => geom,
         Err(_) => return false,
     };
@@ -63,7 +63,7 @@ pub fn svg_path_string_is_valid_geom(d_string: String) -> bool {
 ///
 #[wasm_bindgen(js_name = validateSvgPolygon)]
 pub fn validate_svg_polygon(svg: String) -> bool {
-    let geom = match to_geometry(&svg) {
+    let geom = match svg_to_geometry(&svg) {
         Ok(geom) => geom,
         Err(_) => return false,
     };
@@ -91,7 +91,7 @@ pub fn validate_svg_path_string_as_polygon(d_string: String) -> bool {
 ///
 #[wasm_bindgen(js_name = validateSvgMultiPolygon)]
 pub fn validate_svg_multi_polygon(svg: String) -> bool {
-    let geom = match to_geometry(&svg) {
+    let geom = match svg_to_geometry(&svg) {
         Ok(geom) => geom,
         Err(_) => return false,
     };

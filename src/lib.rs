@@ -8,11 +8,6 @@
 mod boolean;
 mod convertors;
 mod geometry_boolean;
-mod geometry_normalize;
-mod geometry_svg_reader;
-mod geometry_svg_writer;
-mod geometry_validator;
-mod geometry_wkt_writer;
 mod information;
 mod json_errors;
 mod utils;
@@ -20,10 +15,7 @@ mod validators;
 use wasm_bindgen::prelude::*;
 
 use crate::convertors::svg_to_wkt;
-use crate::geometry_svg_reader::to_geometry;
-use crate::geometry_svg_writer::{ToSvg, ToSvgString};
-use crate::geometry_wkt_writer::ToWkt;
-use geo_types::Geometry;
+use geo_svg_io::geo_svg_writer::ToSvgString;
 use geometry_boolean::{
     wkt_multi_polygon_polygon_union, wkt_multi_polygon_union, wkt_polygon_union,
 };

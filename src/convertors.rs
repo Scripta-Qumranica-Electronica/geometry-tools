@@ -1,7 +1,7 @@
-use crate::geometry_svg_reader::to_geometry;
-use crate::geometry_svg_writer::{ToSvg, ToSvgString};
-use crate::geometry_wkt_writer::ToWkt;
+use geo_svg_io::geo_svg_reader::svg_to_geometry;
+use geo_svg_io::geo_svg_writer::{ToSvg, ToSvgString};
 use geo_types::Geometry;
+use geo_wkt_writer::ToWkt;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 use wkt::Wkt;
@@ -13,7 +13,7 @@ use wkt::Wkt;
 ///
 #[wasm_bindgen(js_name = svgToWkt)]
 pub fn svg_to_wkt(svg: String) -> Result<String, JsValue> {
-    let geom = match to_geometry(&svg) {
+    let geom = match svg_to_geometry(&svg) {
         Ok(geom) => geom,
         Err(_) => return Err("The submitted SVG could not be parsed into WKT".into()),
     };
