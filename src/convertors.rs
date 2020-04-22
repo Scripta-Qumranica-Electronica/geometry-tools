@@ -91,7 +91,7 @@ mod tests {
         let svg = r#"<path d="M0 0L10 0L10 10L0 10L0 0M3 3L6 3L6 6L3 6L3 3"/>"#;
         let wkt = svg_to_wkt(svg.into());
         assert_eq!(
-            "POLYGON((0 0,0 10,10 10,10 0,0 0),(3 3,6 3,6 6,3 6,3 3))",
+            "POLYGON((0 0,10 0,10 10,0 10,0 0),(3 3,3 6,6 6,6 3,3 3))",
             wkt.ok().unwrap()
         );
     }

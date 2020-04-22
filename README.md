@@ -10,7 +10,7 @@
   <p>Simply running `wasm-pack build` will generate all the necessary JS/TS files in the `pkg` folder.  The sample website in `www` provides an example of how to use those.</p>
 
   <h2>Tests</h2>
-  <p>Unit tests are written into the individual `.rs` files themselves. They are useful for debugging, since this is a library (and thus has no main function in the binary).</p>
+  <p>Some unit tests can be found in the individual `.rs` files themselves.</p>
 
   <h3>Dependencies</h3>
   <p>Among the many fine dependencies used in this library, the major packages are <a href="https://github.com/georust/geo">geo</a>, <a href="https://github.com/georust/wkt">wkt</a>, and <a href="https://github.com/21re/rust-geo-booleanop">rust-geo-booleanop</a>.</p>

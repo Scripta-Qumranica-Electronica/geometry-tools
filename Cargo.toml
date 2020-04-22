@@ -1,8 +1,15 @@
 [package]
 name = "geometry-tools"
+description = "A WASM package for converting WKT<->SVG, for validating geometries, and for performing boolean operations"
 version = "0.1.0"
 authors = ["Bronson Brown-deVost <bronsonbdevost@aim.com>"]
 edition = "2018"
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/Scripta-Qumranica-Electronica/geometry-tools"
+repository = "https://github.com/Scripta-Qumranica-Electronica/geometry-tools"
+keywords = ["WKT", "SVG", "gis", "boolean"]
+categories = ["graphics"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]

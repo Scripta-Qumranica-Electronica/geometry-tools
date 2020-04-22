@@ -156,7 +156,7 @@ mod tests {
         let poly1 = String::from("POLYGON((0 0,10 0,10 10,0 10,0 0),(2 2,6 2,6 6,2 6,2 2))");
         let poly2 = String::from("POLYGON((1 1,5 1,5 5,1 5,1 1))");
         let union = wkt_boolean(&poly1, &poly2, geo_booleanop::boolean::Operation::Union);
-        let expected = "POLYGON((0 0,0 10,10 10,10 0,0 0),(2 5,5 5,5 2,6 2,6 6,2 6,2 5))";
+        let expected = "POLYGON((0 0,10 0,10 10,0 10,0 0),(2 5,2 6,6 6,6 2,5 2,5 5,2 5))";
         assert!(union.is_ok());
         assert_eq!(expected, union.unwrap());
     }
@@ -186,7 +186,7 @@ mod tests {
         let poly1 = String::from("POLYGON((0 0,10 0,10 10,0 10),(2 2,6 2,6 6,2 6,2 2))");
         let poly2 = String::from("POLYGON((1 1,5 1,5 5,1 5))");
         let union = wkt_boolean(&poly1, &poly2, geo_booleanop::boolean::Operation::Union);
-        let expected = "POLYGON((0 0,0 10,10 10,10 0,0 0),(2 5,5 5,5 2,6 2,6 6,2 6,2 5))";
+        let expected = "POLYGON((0 0,10 0,10 10,0 10,0 0),(2 5,2 6,6 6,6 2,5 2,5 5,2 5))";
         assert!(union.is_ok());
         assert_eq!(expected, union.unwrap());
     }
