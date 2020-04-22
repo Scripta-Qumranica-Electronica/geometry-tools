@@ -15,11 +15,6 @@ mod validators;
 use wasm_bindgen::prelude::*;
 
 use crate::convertors::svg_to_wkt;
-use geo_svg_io::geo_svg_writer::ToSvgString;
-use geometry_boolean::{
-    wkt_multi_polygon_polygon_union, wkt_multi_polygon_union, wkt_polygon_union,
-};
-use wkt::Wkt;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
 // allocator.
@@ -37,19 +32,22 @@ extern "C" {
 pub fn greet() {
     alert("Hello, geometry-tools!");
 }
+
+#[wasm_bindgen]
 pub fn exp_svg_to_wkt(svg: String) -> Result<String, JsValue> {
     svg_to_wkt(svg)
 }
+
 /** Tests */
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::boolean::wkt_union;
+    use crate::boolean::wkt_polygon_union;
 
     #[test]
     fn can_join_polygons() {
-        let res = wkt_union(
+        let res = wkt_polygon_union(
             "POLYGON((0 0,10 0,10 10,0 10,0 0),(3 3,6 3,6 6,3 6,3 3))".into(),
             "POLYGON((2 2,4 2,4 4,2 4,2 2))".into(),
         );

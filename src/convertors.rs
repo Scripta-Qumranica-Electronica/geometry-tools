@@ -1,4 +1,6 @@
-use geo_svg_io::geo_svg_reader::svg_to_geometry;
+use crate::json_errors;
+use geo_repair_polygon::repair::Repair;
+use geo_svg_io::geo_svg_reader::svg_to_geometry_collection;
 use geo_svg_io::geo_svg_writer::{ToSvg, ToSvgString};
 use geo_types::Geometry;
 use geo_wkt_writer::ToWkt;
@@ -13,26 +15,27 @@ use wkt::Wkt;
 ///
 #[wasm_bindgen(js_name = svgToWkt)]
 pub fn svg_to_wkt(svg: String) -> Result<String, JsValue> {
-    let geom = match svg_to_geometry(&svg) {
+    let geom = match svg_to_geometry_collection(&svg) {
         Ok(geom) => geom,
-        Err(_) => return Err("The submitted SVG could not be parsed into WKT".into()),
+        Err(_) => return Err(json_errors::svg_error::could_not_parse()),
     };
 
     if geom.0.len() == 1 {
         let single = geom.0[0].clone();
         return match single {
-            Geometry::MultiPolygon { .. } => Ok(single.into_multi_polygon().unwrap().to_wkt()),
-            Geometry::Polygon { .. } => Ok(single.into_polygon().unwrap().to_wkt()),
-            Geometry::MultiLineString { .. } => {
-                Ok(single.into_multi_line_string().unwrap().to_wkt())
-            }
-            Geometry::LineString { .. } => Ok(single.into_line_string().unwrap().to_wkt()),
-            Geometry::Line { .. } => Ok(single.into_line().unwrap().to_wkt()),
+            Geometry::MultiPolygon { .. } => match single.into_multi_polygon().unwrap().repair() {
+                Some(wkt) => Ok(wkt.to_wkt()),
+                None => Err(json_errors::geometry_processing_error::irreparable_geom()),
+            },
+            Geometry::Polygon { .. } => match single.into_polygon().unwrap().repair() {
+                Some(wkt) => Ok(wkt.to_wkt()),
+                None => Err(json_errors::geometry_processing_error::irreparable_geom()),
+            },
             _ => Ok(single.to_wkt()),
         };
     }
 
-    Ok(geom.to_wkt())
+    Err(json_errors::svg_error::could_not_parse())
 }
 
 /// Convert an SVG <path> d-string into a WKT representation.
@@ -58,14 +61,7 @@ pub fn wkt_to_svg(wkt: String) -> Result<String, JsValue> {
         Err(err) => return Err(JsValue::from_str(err.to_string().as_str())),
     };
 
-    match geom {
-        Geometry::MultiPolygon { .. } => Ok(geom.into_multi_polygon().unwrap().to_svg()),
-        Geometry::Polygon { .. } => Ok(geom.into_polygon().unwrap().to_svg()),
-        Geometry::MultiLineString { .. } => Ok(geom.into_multi_line_string().unwrap().to_svg()),
-        Geometry::LineString { .. } => Ok(geom.into_line_string().unwrap().to_svg()),
-        Geometry::Line { .. } => Ok(geom.into_line().unwrap().to_svg()),
-        _ => Ok(geom.to_svg()),
-    }
+    Ok(geom.to_svg())
 }
 
 /// Converts a WKT geometry into an SVG <path> d-string.
@@ -97,6 +93,16 @@ mod tests {
         assert_eq!(
             "POLYGON((0 0,0 10,10 10,10 0,0 0),(3 3,6 3,6 6,3 6,3 3))",
             wkt.ok().unwrap()
+        );
+    }
+
+    #[test]
+    fn can_convert_wkt_to_svg() {
+        let wkt = "POLYGON((0 0,0 10,10 10,10 0,0 0),(3 3,6 3,6 6,3 6,3 3))";
+        let svg = wkt_to_svg(wkt.into());
+        assert_eq!(
+            r#"<path d="M0 0L0 10L10 10L10 0L0 0M3 3L6 3L6 6L3 6L3 3"/>"#,
+            svg.ok().unwrap()
         );
     }
 }

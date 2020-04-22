@@ -1,5 +1,5 @@
 use crate::json_errors;
-use geo_svg_io::geo_svg_reader::svg_to_geometry;
+use geo_svg_io::geo_svg_reader::svg_to_geometry_collection;
 use geo_types::Geometry;
 use wasm_bindgen::prelude::*;
 
@@ -9,22 +9,24 @@ use wasm_bindgen::prelude::*;
 ///
 #[wasm_bindgen(js_name = svgGeomType)]
 pub fn svg_geom_type(svg: String) -> String {
-    let geom = match svg_to_geometry(&svg) {
+    let geom = match svg_to_geometry_collection(&svg) {
         Ok(geom) => geom,
         Err(_) => return "None".into(),
     };
 
     if geom.0.len() > 1 {
-        return "GeometryCollection".into();
+        return "GEOMETRYCOLLECTION".into();
     }
 
     match geom.0[0] {
-        Geometry::MultiPolygon { .. } => "MultiPolygon".into(),
-        Geometry::Polygon { .. } => "Polygon".into(),
-        Geometry::MultiLineString { .. } => "MultiLineString".into(),
-        Geometry::LineString { .. } => "LineString".into(),
-        Geometry::Line { .. } => "Line".into(),
-        _ => "None".into(),
+        Geometry::MultiPolygon { .. } => "MULTIPOLYGON".into(),
+        Geometry::Polygon { .. } => "POLYGON".into(),
+        Geometry::MultiLineString { .. } => "MULTILINESTRING".into(),
+        Geometry::LineString { .. } => "LINESTRING".into(),
+        Geometry::Line { .. } => "LINESTRING".into(),
+        Geometry::MultiPoint { .. } => "MULTIPOINT".into(),
+        Geometry::Point { .. } => "POINT".into(),
+        _ => "INVALIDGEOMETRY".into(),
     }
 }
 
@@ -67,4 +69,8 @@ pub fn get_geometry_type(geom: &str) -> Result<String, JsValue> {
         Some(&_) => Err(json_errors::wkt_errors::wkt_cannot_be_parsed(geom)),
         None => Err(json_errors::wkt_errors::wkt_cannot_be_parsed(geom)),
     }
+}
+
+pub fn type_of<T>(_: T) -> String {
+    std::any::type_name::<T>().into()
 }
